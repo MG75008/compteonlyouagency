@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "compta-dev",
+      "runtimeExecutable": "/private/tmp/claude-501/-Users-mileone-Desktop/55c86634-44e8-4aac-95e9-e2c683aa8b13/scratchpad/node-v20.18.1-darwin-arm64/bin/npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    }
+  ]
+}

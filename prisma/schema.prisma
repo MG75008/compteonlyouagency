@@ -1,0 +1,31 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  type        String // "INCOME" | "EXPENSE"
+  source      String // "OnlyFans", "Top up", "Autre", ...
+  grossAmount Float
+  feeAmount   Float    @default(0)
+  netAmount   Float
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([date])
+}
+
+model Settings {
+  id             String  @id @default("singleton")
+  telegramChatId String?
+}
