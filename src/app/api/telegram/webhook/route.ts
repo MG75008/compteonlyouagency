@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     });
     await sendTelegramMessage(
       chatId,
-      "Bot lie a ton compte !\n\nEnvoie-moi par exemple :\n- onlyfans 1655\n- topup 600\n- depense essence 40"
+      "Bot lie a ton compte !\n\nSeul 'onlyfans <montant>' compte comme un revenu (+20% de commission retiree automatiquement).\nTout le reste avec un montant est enregistre comme une depense, avec le libelle que tu ecris.\n\nExemples :\n- onlyfans 1655\n- 600 IG\n- essence 40"
     );
     return NextResponse.json({ ok: true });
   }
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   if (!result.ok) {
     await sendTelegramMessage(
       chatId,
-      "Je n'ai pas compris.\n\nExemples :\n- onlyfans 1655\n- topup 600\n- depense essence 40"
+      "Je n'ai pas compris (aucun montant trouve).\n\nExemples :\n- onlyfans 1655\n- 600 IG\n- essence 40"
     );
     return NextResponse.json({ ok: true });
   }

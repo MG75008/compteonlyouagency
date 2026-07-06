@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { computeIncome, round2 } from "@/lib/money";
-import { dayRangeUtc, todayKey } from "@/lib/date";
+import { periodRangeUtc, todayKey, type Period } from "@/lib/date";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const date = searchParams.get("date") || todayKey();
-  const { start, end } = dayRangeUtc(date);
+  const period = (searchParams.get("period") || "day") as Period;
+  const { start, end } = periodRangeUtc(date, period);
 
   const transactions = await prisma.transaction.findMany({
     where: { date: { gte: start, lt: end } },
     orderBy: { date: "desc" },
   });
 
-  return NextResponse.json({ date, transactions });
+  return NextResponse.json({ date, period, transactions });
 }
 
 export async function POST(request: NextRequest) {

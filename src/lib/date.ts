@@ -54,3 +54,55 @@ export function shiftDayKey(dateStr: string, delta: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d + delta));
   return dt.toISOString().slice(0, 10);
 }
+
+export type Period = "day" | "week" | "month";
+
+export function monthBounds(dateStr: string): { first: string; last: string } {
+  const [y, m] = dateStr.split("-").map(Number);
+  const first = `${y}-${String(m).padStart(2, "0")}-01`;
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const last = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  return { first, last };
+}
+
+export function periodBounds(dateStr: string, period: Period): { from: string; to: string } {
+  if (period === "day") return { from: dateStr, to: dateStr };
+  if (period === "week") return { from: shiftDayKey(dateStr, -6), to: dateStr };
+  const { first, last } = monthBounds(dateStr);
+  return { from: first, to: last };
+}
+
+export function periodRangeUtc(
+  dateStr: string,
+  period: Period,
+  tz: string = APP_TIMEZONE
+) {
+  const { from, to } = periodBounds(dateStr, period);
+  const { start } = dayRangeUtc(from, tz);
+  const { end } = dayRangeUtc(to, tz);
+  return { start, end };
+}
+
+export function shiftPeriod(dateStr: string, period: Period, delta: number): string {
+  if (period === "day") return shiftDayKey(dateStr, delta);
+  if (period === "week") return shiftDayKey(dateStr, delta * 7);
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const total = y * 12 + (m - 1) + delta;
+  const newY = Math.floor(total / 12);
+  const newM = (total % 12) + 1;
+  const daysInNewMonth = new Date(Date.UTC(newY, newM, 0)).getUTCDate();
+  const newD = Math.min(d, daysInNewMonth);
+  return `${newY}-${String(newM).padStart(2, "0")}-${String(newD).padStart(2, "0")}`;
+}
+
+export function daysInRange(fromDateStr: string, toDateStr: string): string[] {
+  const result: string[] = [];
+  let cur = fromDateStr;
+  let guard = 0;
+  while (cur <= toDateStr && guard < 400) {
+    result.push(cur);
+    cur = shiftDayKey(cur, 1);
+    guard++;
+  }
+  return result;
+}

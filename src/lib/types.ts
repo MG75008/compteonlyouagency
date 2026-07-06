@@ -18,3 +18,10 @@ export type DaySummary = {
   expenses: number;
   result: number;
 };
+
+export type PeriodSummary = DaySummary & {
+  period: "day" | "week" | "month";
+  from: string;
+  to: string;
+  history?: DaySummary[];
+};

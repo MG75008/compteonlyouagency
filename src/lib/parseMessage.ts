@@ -1,49 +1,44 @@
-type IncomeRule = { keywords: string[]; source: string; applyOfFee: boolean };
-type ExpenseRule = { keywords: string[]; source: string };
+const INCOME_KEYWORDS = ["onlyfans", "of"];
 
-const INCOME_RULES: IncomeRule[] = [
-  { keywords: ["onlyfans", "of"], source: "OnlyFans", applyOfFee: true },
-  {
-    keywords: ["revenu", "rentree", "rentree d'argent", "income", "entree"],
-    source: "Autre revenu",
-    applyOfFee: false,
-  },
-];
-
-const EXPENSE_RULES: ExpenseRule[] = [
-  { keywords: ["topup", "top up", "recharge"], source: "Top up" },
-  { keywords: ["depense", "sortie", "expense", "achat"], source: "Depense" },
+const EXPENSE_FILLER_WORDS = [
+  "depense",
+  "dépense",
+  "topup",
+  "top up",
+  "recharge",
+  "sortie",
+  "expense",
+  "achat",
+  "pour",
 ];
 
 export type ParsedTransaction =
-  | {
-      kind: "income";
-      source: string;
-      applyOfFee: boolean;
-      gross: number;
-      note?: string;
-    }
+  | { kind: "income"; source: string; applyOfFee: boolean; gross: number; note?: string }
   | { kind: "expense"; source: string; amount: number; note?: string };
 
 export type ParseResult =
   | { ok: true; data: ParsedTransaction }
-  | { ok: false; reason: "empty" | "no-amount" | "unknown-format" };
+  | { ok: false; reason: "empty" | "no-amount" };
 
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .trim();
+function matchPrefix(text: string, keyword: string): string | null {
+  const lower = text.toLowerCase();
+  if (lower === keyword) return "";
+  if (lower.startsWith(keyword + " ") || lower.startsWith(keyword + ":")) {
+    return text.slice(keyword.length).replace(/^:/, "").trim();
+  }
+  return null;
 }
 
-function extractAmount(s: string): { amount: number; rest: string } | null {
+function extractAmount(
+  s: string
+): { amount: number; before: string; after: string } | null {
   const m = s.match(/(\d[\d\s.,]*)/);
   if (!m || m.index === undefined) return null;
   let raw = m[1].trim();
-  const rest = (s.slice(0, m.index) + " " + s.slice(m.index + m[0].length))
+  const before = s.slice(0, m.index).replace(/\$/g, "").trim();
+  const after = s
+    .slice(m.index + m[0].length)
     .replace(/\$/g, "")
-    .replace(/\s+/g, " ")
     .trim();
   raw = raw.replace(/\s/g, "");
   if (raw.includes(",") && raw.includes(".")) {
@@ -53,60 +48,58 @@ function extractAmount(s: string): { amount: number; rest: string } | null {
   }
   const amount = parseFloat(raw);
   if (isNaN(amount) || amount <= 0) return null;
-  return { amount, rest };
+  return { amount, before, after };
 }
 
-function matchKeyword(
-  normalized: string,
-  keywords: string[]
-): { remainder: string } | null {
-  for (const kw of keywords) {
-    if (normalized === kw) return { remainder: "" };
-    if (normalized.startsWith(kw + " ") || normalized.startsWith(kw + ":")) {
-      return { remainder: normalized.slice(kw.length).replace(/^:/, "").trim() };
-    }
+function stripFillerWord(label: string): string {
+  const lower = label.toLowerCase();
+  for (const filler of EXPENSE_FILLER_WORDS) {
+    if (lower === filler) return "";
+    if (lower.startsWith(filler + " ")) return label.slice(filler.length).trim();
   }
-  return null;
+  return label;
+}
+
+function titleCase(s: string): string {
+  if (s === s.toUpperCase()) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function parseMessage(raw: string): ParseResult {
-  const normalized = normalize(raw);
-  if (!normalized) return { ok: false, reason: "empty" };
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: false, reason: "empty" };
 
-  for (const rule of INCOME_RULES) {
-    const match = matchKeyword(normalized, rule.keywords);
-    if (match) {
-      const parsed = extractAmount(match.remainder);
+  for (const kw of INCOME_KEYWORDS) {
+    const remainder = matchPrefix(trimmed, kw);
+    if (remainder !== null) {
+      const parsed = extractAmount(remainder);
       if (!parsed) return { ok: false, reason: "no-amount" };
+      const note = [parsed.before, parsed.after].filter(Boolean).join(" ").trim();
       return {
         ok: true,
         data: {
           kind: "income",
-          source: rule.source,
-          applyOfFee: rule.applyOfFee,
+          source: "OnlyFans",
+          applyOfFee: true,
           gross: parsed.amount,
-          note: parsed.rest || undefined,
+          note: note || undefined,
         },
       };
     }
   }
 
-  for (const rule of EXPENSE_RULES) {
-    const match = matchKeyword(normalized, rule.keywords);
-    if (match) {
-      const parsed = extractAmount(match.remainder);
-      if (!parsed) return { ok: false, reason: "no-amount" };
-      return {
-        ok: true,
-        data: {
-          kind: "expense",
-          source: rule.source,
-          amount: parsed.amount,
-          note: parsed.rest || undefined,
-        },
-      };
-    }
-  }
+  const parsed = extractAmount(trimmed);
+  if (!parsed) return { ok: false, reason: "no-amount" };
 
-  return { ok: false, reason: "unknown-format" };
+  let label = [parsed.before, parsed.after].filter(Boolean).join(" ").trim();
+  label = stripFillerWord(label);
+
+  return {
+    ok: true,
+    data: {
+      kind: "expense",
+      source: label ? titleCase(label) : "Dépense",
+      amount: parsed.amount,
+    },
+  };
 }

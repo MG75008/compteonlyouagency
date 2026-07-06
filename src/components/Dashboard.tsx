@@ -1,34 +1,44 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { DaySummary, Transaction } from "@/lib/types";
+import { periodBounds, shiftPeriod, todayKey, type Period } from "@/lib/date";
+import type { PeriodSummary, Transaction } from "@/lib/types";
 
-function todayStr(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
-
-function shiftDate(dateStr: string, delta: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + delta));
-  return dt.toISOString().slice(0, 10);
-}
-
-function formatDateLabel(dateStr: string): string {
+function formatShort(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  const label = new Intl.DateTimeFormat("fr-FR", {
+  return new Intl.DateTimeFormat("fr-FR", {
     timeZone: "UTC",
-    weekday: "long",
     day: "numeric",
-    month: "long",
-    year: "numeric",
+    month: "short",
   }).format(dt);
-  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function formatPeriodLabel(dateStr: string, period: Period): string {
+  if (period === "day") {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const label = new Intl.DateTimeFormat("fr-FR", {
+      timeZone: "UTC",
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(dt);
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+  const { from, to } = periodBounds(dateStr, period);
+  if (period === "month") {
+    const [y, m] = from.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, 1));
+    const label = new Intl.DateTimeFormat("fr-FR", {
+      timeZone: "UTC",
+      month: "long",
+      year: "numeric",
+    }).format(dt);
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+  return `${formatShort(from)} – ${formatShort(to)}`;
 }
 
 function money(n: number): string {
@@ -38,8 +48,11 @@ function money(n: number): string {
   }).format(n);
 }
 
-const emptySummary: DaySummary = {
+const emptySummary: PeriodSummary = {
   date: "",
+  period: "day",
+  from: "",
+  to: "",
   grossIncome: 0,
   ofFees: 0,
   netIncome: 0,
@@ -47,11 +60,17 @@ const emptySummary: DaySummary = {
   result: 0,
 };
 
+const PERIOD_LABELS: Record<Period, string> = {
+  day: "Jour",
+  week: "7 jours",
+  month: "Mois",
+};
+
 export default function Dashboard() {
-  const [date, setDate] = useState(todayStr());
-  const [summary, setSummary] = useState<DaySummary>(emptySummary);
+  const [period, setPeriod] = useState<Period>("day");
+  const [date, setDate] = useState(todayKey());
+  const [summary, setSummary] = useState<PeriodSummary>(emptySummary);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [history, setHistory] = useState<DaySummary[]>([]);
   const [botConnected, setBotConnected] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,23 +81,21 @@ export default function Dashboard() {
   const [applyFee, setApplyFee] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const refresh = useCallback(async (d: string) => {
+  const refresh = useCallback(async (d: string, p: Period) => {
     setLoading(true);
-    const [summaryRes, txRes, historyRes] = await Promise.all([
-      fetch(`/api/summary?date=${d}`).then((r) => r.json()),
-      fetch(`/api/transactions?date=${d}`).then((r) => r.json()),
-      fetch(`/api/summary?date=${d}&days=7`).then((r) => r.json()),
+    const [summaryRes, txRes] = await Promise.all([
+      fetch(`/api/summary?date=${d}&period=${p}`).then((r) => r.json()),
+      fetch(`/api/transactions?date=${d}&period=${p}`).then((r) => r.json()),
     ]);
     setSummary(summaryRes);
     setTransactions(txRes.transactions);
-    setHistory(historyRes.history);
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data fetch on date change
-    refresh(date);
-  }, [date, refresh]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data fetch on date/period change
+    refresh(date, period);
+  }, [date, period, refresh]);
 
   useEffect(() => {
     fetch("/api/telegram/status")
@@ -88,8 +105,13 @@ export default function Dashboard() {
 
   function selectFormType(next: "INCOME" | "EXPENSE") {
     setFormType(next);
-    setSource(next === "INCOME" ? "OnlyFans" : "Top up");
+    setSource(next === "INCOME" ? "OnlyFans" : "");
     setApplyFee(next === "INCOME");
+  }
+
+  function selectPeriod(next: Period) {
+    setPeriod(next);
+    setDate(todayKey());
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -102,25 +124,26 @@ export default function Dashboard() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         type: formType,
-        source,
+        source: source || (formType === "INCOME" ? "OnlyFans" : "Dépense"),
         amount: value,
         applyOfFee: formType === "INCOME" ? applyFee : false,
         note,
-        date: `${date}T12:00:00`,
+        date: `${period === "day" ? date : todayKey()}T12:00:00`,
       }),
     });
     setAmount("");
     setNote("");
     setSubmitting(false);
-    refresh(date);
+    refresh(date, period);
   }
 
   async function handleDelete(id: string) {
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-    refresh(date);
+    refresh(date, period);
   }
 
-  const isToday = date === todayStr();
+  const today = todayKey();
+  const isCurrent = today >= summary.from && today <= summary.to;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 sm:py-12">
@@ -147,21 +170,37 @@ export default function Dashboard() {
         </div>
       </header>
 
+      <div className="flex gap-2 rounded-xl border border-neutral-200 bg-white p-1">
+        {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
+          <button
+            key={p}
+            onClick={() => selectPeriod(p)}
+            className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition ${
+              period === p
+                ? "bg-neutral-900 text-white"
+                : "text-neutral-500 hover:bg-neutral-100"
+            }`}
+          >
+            {PERIOD_LABELS[p]}
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-4 py-3">
         <button
-          onClick={() => setDate(shiftDate(date, -1))}
+          onClick={() => setDate(shiftPeriod(date, period, -1))}
           className="rounded-lg px-2 py-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
-          aria-label="Jour précédent"
+          aria-label="Période précédente"
         >
           ←
         </button>
         <div className="text-center">
           <div className="text-sm font-medium text-neutral-900">
-            {formatDateLabel(date)}
+            {formatPeriodLabel(date, period)}
           </div>
-          {!isToday && (
+          {!isCurrent && (
             <button
-              onClick={() => setDate(todayStr())}
+              onClick={() => setDate(todayKey())}
               className="text-xs text-neutral-400 underline underline-offset-2 hover:text-neutral-600"
             >
               revenir à aujourd&apos;hui
@@ -169,10 +208,10 @@ export default function Dashboard() {
           )}
         </div>
         <button
-          onClick={() => setDate(shiftDate(date, 1))}
+          onClick={() => setDate(shiftPeriod(date, period, 1))}
           className="rounded-lg px-2 py-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
-          aria-label="Jour suivant"
-          disabled={isToday}
+          aria-label="Période suivante"
+          disabled={isCurrent}
         >
           →
         </button>
@@ -223,7 +262,7 @@ export default function Dashboard() {
               value={source}
               onChange={(e) => setSource(e.target.value)}
               className="rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-              placeholder="OnlyFans, Top up…"
+              placeholder={formType === "INCOME" ? "OnlyFans" : "IG, essence…"}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -273,107 +312,107 @@ export default function Dashboard() {
         </button>
       </form>
 
-      <div className="rounded-xl border border-neutral-200 bg-white">
-        <div className="border-b border-neutral-100 px-4 py-3 text-sm font-medium text-neutral-700">
-          Transactions du jour
-        </div>
-        {loading ? (
-          <div className="px-4 py-6 text-center text-sm text-neutral-400">
-            Chargement…
+      {period === "day" ? (
+        <div className="rounded-xl border border-neutral-200 bg-white">
+          <div className="border-b border-neutral-100 px-4 py-3 text-sm font-medium text-neutral-700">
+            Transactions du jour
           </div>
-        ) : transactions.length === 0 ? (
-          <div className="px-4 py-6 text-center text-sm text-neutral-400">
-            Aucune transaction ce jour-là
-          </div>
-        ) : (
-          <ul className="divide-y divide-neutral-100">
-            {transactions.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center justify-between gap-3 px-4 py-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${
-                      t.type === "INCOME" ? "bg-emerald-500" : "bg-red-500"
-                    }`}
-                  />
-                  <div>
-                    <div className="text-sm font-medium text-neutral-900">
-                      {t.source}
-                    </div>
-                    {t.note && (
-                      <div className="text-xs text-neutral-400">{t.note}</div>
-                    )}
-                    {t.type === "INCOME" && t.feeAmount > 0 && (
-                      <div className="text-xs text-neutral-400">
-                        Brut {money(t.grossAmount)} $ − commission{" "}
-                        {money(t.feeAmount)} $
+          {loading ? (
+            <div className="px-4 py-6 text-center text-sm text-neutral-400">
+              Chargement…
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-neutral-400">
+              Aucune transaction ce jour-là
+            </div>
+          ) : (
+            <ul className="divide-y divide-neutral-100">
+              {transactions.map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        t.type === "INCOME" ? "bg-emerald-500" : "bg-red-500"
+                      }`}
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-neutral-900">
+                        {t.source}
                       </div>
-                    )}
+                      {t.note && (
+                        <div className="text-xs text-neutral-400">{t.note}</div>
+                      )}
+                      {t.type === "INCOME" && t.feeAmount > 0 && (
+                        <div className="text-xs text-neutral-400">
+                          Brut {money(t.grossAmount)} $ − commission{" "}
+                          {money(t.feeAmount)} $
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`text-sm font-semibold ${
-                      t.type === "INCOME" ? "text-emerald-600" : "text-red-600"
-                    }`}
-                  >
-                    {t.type === "INCOME" ? "+" : "−"}
-                    {money(t.netAmount)} $
-                  </span>
-                  <button
-                    onClick={() => handleDelete(t.id)}
-                    className="text-neutral-300 transition hover:text-red-500"
-                    aria-label="Supprimer"
-                  >
-                    ✕
-                  </button>
-                </div>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`text-sm font-semibold ${
+                        t.type === "INCOME" ? "text-emerald-600" : "text-red-600"
+                      }`}
+                    >
+                      {t.type === "INCOME" ? "+" : "−"}
+                      {money(t.netAmount)} $
+                    </span>
+                    <button
+                      onClick={() => handleDelete(t.id)}
+                      className="text-neutral-300 transition hover:text-red-500"
+                      aria-label="Supprimer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-neutral-200 bg-white">
+          <div className="border-b border-neutral-100 px-4 py-3 text-sm font-medium text-neutral-700">
+            Détail par jour
+          </div>
+          <ul className="divide-y divide-neutral-100">
+            {(summary.history ?? []).map((h) => (
+              <li
+                key={h.date}
+                className="flex items-center justify-between px-4 py-2.5 text-sm"
+              >
+                <button
+                  onClick={() => {
+                    setPeriod("day");
+                    setDate(h.date);
+                  }}
+                  className="text-neutral-500 hover:text-neutral-900 hover:underline"
+                >
+                  {formatShort(h.date)}
+                </button>
+                <span className="text-neutral-400">
+                  net {money(h.netIncome)} $
+                </span>
+                <span className="text-neutral-400">
+                  dép. {money(h.expenses)} $
+                </span>
+                <span
+                  className={`font-medium ${
+                    h.result >= 0 ? "text-emerald-600" : "text-red-600"
+                  }`}
+                >
+                  {money(h.result)} $
+                </span>
               </li>
             ))}
           </ul>
-        )}
-      </div>
-
-      <div className="rounded-xl border border-neutral-200 bg-white">
-        <div className="border-b border-neutral-100 px-4 py-3 text-sm font-medium text-neutral-700">
-          7 derniers jours
         </div>
-        <ul className="divide-y divide-neutral-100">
-          {history.map((h) => (
-            <li
-              key={h.date}
-              className="flex items-center justify-between px-4 py-2.5 text-sm"
-            >
-              <button
-                onClick={() => setDate(h.date)}
-                className="text-neutral-500 hover:text-neutral-900 hover:underline"
-              >
-                {new Intl.DateTimeFormat("fr-FR", {
-                  timeZone: "UTC",
-                  weekday: "short",
-                  day: "numeric",
-                  month: "short",
-                }).format(new Date(`${h.date}T00:00:00Z`))}
-              </button>
-              <span className="text-neutral-400">
-                net {money(h.netIncome)} $
-              </span>
-              <span className="text-neutral-400">
-                dép. {money(h.expenses)} $
-              </span>
-              <span
-                className={`font-medium ${
-                  h.result >= 0 ? "text-emerald-600" : "text-red-600"
-                }`}
-              >
-                {money(h.result)} $
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      )}
     </div>
   );
 }

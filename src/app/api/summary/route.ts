@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { round2 } from "@/lib/money";
-import { dayRangeUtc, shiftDayKey, todayKey } from "@/lib/date";
+import {
+  daysInRange,
+  dayKey,
+  periodBounds,
+  periodRangeUtc,
+  todayKey,
+  type Period,
+} from "@/lib/date";
 
-function summarize(transactions: { type: string; grossAmount: number; feeAmount: number; netAmount: number }[]) {
+function summarize(
+  transactions: { type: string; grossAmount: number; feeAmount: number; netAmount: number }[]
+) {
   let grossIncome = 0;
   let ofFees = 0;
   let netIncome = 0;
@@ -29,34 +38,26 @@ function summarize(transactions: { type: string; grossAmount: number; feeAmount:
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const date = searchParams.get("date") || todayKey();
-  const days = Number(searchParams.get("days") || 1);
+  const period = (searchParams.get("period") || "day") as Period;
 
-  if (days <= 1) {
-    const { start, end } = dayRangeUtc(date);
-    const transactions = await prisma.transaction.findMany({
-      where: { date: { gte: start, lt: end } },
-    });
-    return NextResponse.json({ date, ...summarize(transactions) });
-  }
-
-  const fromDate = shiftDayKey(date, -(days - 1));
-  const { start } = dayRangeUtc(fromDate);
-  const { end } = dayRangeUtc(date);
+  const { from, to } = periodBounds(date, period);
+  const { start, end } = periodRangeUtc(date, period);
   const transactions = await prisma.transaction.findMany({
     where: { date: { gte: start, lt: end } },
   });
 
+  const base = { date, period, from, to, ...summarize(transactions) };
+
+  if (period === "day") {
+    return NextResponse.json(base);
+  }
+
   const byDay = new Map<string, typeof transactions>();
-  for (let i = 0; i < days; i++) {
-    byDay.set(shiftDayKey(date, -i), []);
+  for (const day of daysInRange(from, to)) {
+    byDay.set(day, []);
   }
   for (const t of transactions) {
-    const key = new Intl.DateTimeFormat("en-CA", {
-      timeZone: process.env.APP_TIMEZONE || "America/Toronto",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(t.date);
+    const key = dayKey(t.date);
     if (!byDay.has(key)) byDay.set(key, []);
     byDay.get(key)!.push(t);
   }
@@ -65,5 +66,5 @@ export async function GET(request: NextRequest) {
     .sort((a, b) => (a[0] < b[0] ? 1 : -1))
     .map(([day, txs]) => ({ date: day, ...summarize(txs) }));
 
-  return NextResponse.json({ date, history });
+  return NextResponse.json({ ...base, history });
 }
