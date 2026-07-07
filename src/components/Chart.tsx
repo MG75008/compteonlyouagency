@@ -14,7 +14,7 @@ const PAD_BOTTOM = 28;
 export default function Chart({ points, color }: ChartProps) {
   if (points.length === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-neutral-400">
+      <div className="flex h-[220px] items-center justify-center text-sm text-brand-muted">
         Aucune donnée
       </div>
     );
@@ -73,11 +73,11 @@ export default function Chart({ points, color }: ChartProps) {
             y1={g.y}
             x2={WIDTH - PAD_X}
             y2={g.y}
-            stroke="#e5e5e5"
+            stroke="#4a3a32"
             strokeDasharray="4 4"
             strokeWidth={1}
           />
-          <text x={0} y={g.y - 4} fontSize={9} fill="#a3a3a3">
+          <text x={0} y={g.y - 4} fontSize={9} fill="#b6a693">
             {Math.round(g.value)}
           </text>
         </g>
@@ -97,7 +97,7 @@ export default function Chart({ points, color }: ChartProps) {
             x={coords[i].x}
             y={HEIGHT - 8}
             fontSize={9}
-            fill="#a3a3a3"
+            fill="#b6a693"
             textAnchor="middle"
           >
             {p.label}
