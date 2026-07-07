@@ -10,8 +10,8 @@ export type Transaction = {
   createdAt: string;
 };
 
-export type DaySummary = {
-  date: string;
+export type ChartPoint = {
+  label: string;
   grossIncome: number;
   ofFees: number;
   netIncome: number;
@@ -19,9 +19,15 @@ export type DaySummary = {
   result: number;
 };
 
-export type PeriodSummary = DaySummary & {
-  period: "day" | "week" | "month";
+export type PeriodSummary = {
+  period: "yesterday" | "today" | "week" | "month" | "alltime";
   from: string;
   to: string;
-  history?: DaySummary[];
+  granularity: "hour" | "day" | "month";
+  grossIncome: number;
+  ofFees: number;
+  netIncome: number;
+  expenses: number;
+  result: number;
+  points: ChartPoint[];
 };

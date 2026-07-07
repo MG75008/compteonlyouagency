@@ -4,15 +4,17 @@ import { round2 } from "@/lib/money";
 import {
   daysInRange,
   dayKey,
-  periodBounds,
-  periodRangeUtc,
-  todayKey,
-  type Period,
+  hourKeysOfDay,
+  hourOfDate,
+  monthKeyOf,
+  monthsInRange,
+  viewPeriodRangeUtc,
+  type ViewPeriod,
 } from "@/lib/date";
 
-function summarize(
-  transactions: { type: string; grossAmount: number; feeAmount: number; netAmount: number }[]
-) {
+type Tx = { type: string; grossAmount: number; feeAmount: number; netAmount: number };
+
+function summarize(transactions: Tx[]) {
   let grossIncome = 0;
   let ofFees = 0;
   let netIncome = 0;
@@ -37,34 +39,81 @@ function summarize(
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const date = searchParams.get("date") || todayKey();
-  const period = (searchParams.get("period") || "day") as Period;
+  const period = (searchParams.get("period") || "alltime") as ViewPeriod;
 
-  const { from, to } = periodBounds(date, period);
-  const { start, end } = periodRangeUtc(date, period);
+  let earliestDate: string | undefined;
+  if (period === "alltime") {
+    const earliest = await prisma.transaction.findFirst({
+      orderBy: { date: "asc" },
+    });
+    earliestDate = earliest ? dayKey(earliest.date) : undefined;
+  }
+
+  const { start, end, from, to, granularity } = viewPeriodRangeUtc(
+    period,
+    earliestDate
+  );
+
   const transactions = await prisma.transaction.findMany({
     where: { date: { gte: start, lt: end } },
   });
 
-  const base = { date, period, from, to, ...summarize(transactions) };
+  const totals = summarize(transactions);
 
-  if (period === "day") {
-    return NextResponse.json(base);
+  const buckets = new Map<string, Tx[]>();
+  let bucketKeys: string[];
+  let labelOf: (key: string) => string;
+
+  if (granularity === "hour") {
+    bucketKeys = hourKeysOfDay();
+    labelOf = (key) => `${key}h`;
+  } else if (granularity === "day") {
+    bucketKeys = daysInRange(from, to);
+    labelOf = (key) => {
+      const [, m, d] = key.split("-").map(Number);
+      return new Intl.DateTimeFormat("fr-FR", {
+        timeZone: "UTC",
+        day: "numeric",
+        month: "short",
+      }).format(new Date(Date.UTC(2000, m - 1, d)));
+    };
+  } else {
+    bucketKeys = monthsInRange(from, to);
+    labelOf = (key) => {
+      const [y, m] = key.split("-").map(Number);
+      const label = new Intl.DateTimeFormat("fr-FR", {
+        timeZone: "UTC",
+        month: "short",
+        year: "2-digit",
+      }).format(new Date(Date.UTC(y, m - 1, 1)));
+      return label;
+    };
   }
 
-  const byDay = new Map<string, typeof transactions>();
-  for (const day of daysInRange(from, to)) {
-    byDay.set(day, []);
-  }
+  for (const key of bucketKeys) buckets.set(key, []);
+
   for (const t of transactions) {
-    const key = dayKey(t.date);
-    if (!byDay.has(key)) byDay.set(key, []);
-    byDay.get(key)!.push(t);
+    const key =
+      granularity === "hour"
+        ? hourOfDate(t.date)
+        : granularity === "day"
+        ? dayKey(t.date)
+        : monthKeyOf(t.date);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(t);
   }
 
-  const history = Array.from(byDay.entries())
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-    .map(([day, txs]) => ({ date: day, ...summarize(txs) }));
+  const points = bucketKeys.map((key) => ({
+    label: labelOf(key),
+    ...summarize(buckets.get(key) ?? []),
+  }));
 
-  return NextResponse.json({ ...base, history });
+  return NextResponse.json({
+    period,
+    from,
+    to,
+    granularity,
+    ...totals,
+    points,
+  });
 }

@@ -1,8 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { periodBounds, shiftPeriod, todayKey, type Period } from "@/lib/date";
 import type { PeriodSummary, Transaction } from "@/lib/types";
+import Chart from "@/components/Chart";
+
+type Metric = "income" | "expense" | "roi";
+type ViewPeriod = "yesterday" | "today" | "week" | "month" | "alltime";
+
+const METRICS: { key: Metric; label: string; color: string }[] = [
+  { key: "income", label: "Rentrée", color: "#059669" },
+  { key: "expense", label: "Dépense", color: "#dc2626" },
+  { key: "roi", label: "ROI", color: "#4f46e5" },
+];
+
+const PERIODS: { key: ViewPeriod; label: string }[] = [
+  { key: "yesterday", label: "Hier" },
+  { key: "today", label: "Aujourd'hui" },
+  { key: "week", label: "Cette semaine" },
+  { key: "month", label: "Ce mois" },
+  { key: "alltime", label: "Tout" },
+];
 
 function formatShort(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -14,33 +31,6 @@ function formatShort(dateStr: string): string {
   }).format(dt);
 }
 
-function formatPeriodLabel(dateStr: string, period: Period): string {
-  if (period === "day") {
-    const [y, m, d] = dateStr.split("-").map(Number);
-    const dt = new Date(Date.UTC(y, m - 1, d));
-    const label = new Intl.DateTimeFormat("fr-FR", {
-      timeZone: "UTC",
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }).format(dt);
-    return label.charAt(0).toUpperCase() + label.slice(1);
-  }
-  const { from, to } = periodBounds(dateStr, period);
-  if (period === "month") {
-    const [y, m] = from.split("-").map(Number);
-    const dt = new Date(Date.UTC(y, m - 1, 1));
-    const label = new Intl.DateTimeFormat("fr-FR", {
-      timeZone: "UTC",
-      month: "long",
-      year: "numeric",
-    }).format(dt);
-    return label.charAt(0).toUpperCase() + label.slice(1);
-  }
-  return `${formatShort(from)} – ${formatShort(to)}`;
-}
-
 function money(n: number): string {
   return new Intl.NumberFormat("fr-CA", {
     minimumFractionDigits: 2,
@@ -48,27 +38,31 @@ function money(n: number): string {
   }).format(n);
 }
 
+function metricValue(
+  s: Pick<PeriodSummary, "netIncome" | "expenses" | "result">,
+  metric: Metric
+): number {
+  if (metric === "income") return s.netIncome;
+  if (metric === "expense") return s.expenses;
+  return s.result;
+}
+
 const emptySummary: PeriodSummary = {
-  date: "",
-  period: "day",
+  period: "alltime",
   from: "",
   to: "",
+  granularity: "day",
   grossIncome: 0,
   ofFees: 0,
   netIncome: 0,
   expenses: 0,
   result: 0,
-};
-
-const PERIOD_LABELS: Record<Period, string> = {
-  day: "Jour",
-  week: "7 jours",
-  month: "Mois",
+  points: [],
 };
 
 export default function Dashboard() {
-  const [period, setPeriod] = useState<Period>("day");
-  const [date, setDate] = useState(todayKey());
+  const [period, setPeriod] = useState<ViewPeriod>("alltime");
+  const [metric, setMetric] = useState<Metric>("income");
   const [summary, setSummary] = useState<PeriodSummary>(emptySummary);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [botConnected, setBotConnected] = useState<boolean | null>(null);
@@ -81,11 +75,11 @@ export default function Dashboard() {
   const [applyFee, setApplyFee] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const refresh = useCallback(async (d: string, p: Period) => {
+  const refresh = useCallback(async (p: ViewPeriod) => {
     setLoading(true);
     const [summaryRes, txRes] = await Promise.all([
-      fetch(`/api/summary?date=${d}&period=${p}`).then((r) => r.json()),
-      fetch(`/api/transactions?date=${d}&period=${p}`).then((r) => r.json()),
+      fetch(`/api/summary?period=${p}`).then((r) => r.json()),
+      fetch(`/api/transactions?period=${p}`).then((r) => r.json()),
     ]);
     setSummary(summaryRes);
     setTransactions(txRes.transactions);
@@ -93,9 +87,9 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data fetch on date/period change
-    refresh(date, period);
-  }, [date, period, refresh]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional data fetch on period change
+    refresh(period);
+  }, [period, refresh]);
 
   useEffect(() => {
     fetch("/api/telegram/status")
@@ -107,11 +101,6 @@ export default function Dashboard() {
     setFormType(next);
     setSource(next === "INCOME" ? "OnlyFans" : "");
     setApplyFee(next === "INCOME");
-  }
-
-  function selectPeriod(next: Period) {
-    setPeriod(next);
-    setDate(todayKey());
   }
 
   async function handleAdd(e: React.FormEvent) {
@@ -128,25 +117,28 @@ export default function Dashboard() {
         amount: value,
         applyOfFee: formType === "INCOME" ? applyFee : false,
         note,
-        date: `${period === "day" ? date : todayKey()}T12:00:00`,
       }),
     });
     setAmount("");
     setNote("");
     setSubmitting(false);
-    refresh(date, period);
+    refresh(period);
   }
 
   async function handleDelete(id: string) {
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-    refresh(date, period);
+    refresh(period);
   }
 
-  const today = todayKey();
-  const isCurrent = today >= summary.from && today <= summary.to;
+  const activeMetric = METRICS.find((m) => m.key === metric)!;
+  const total = metricValue(summary, metric);
+  const chartPoints = summary.points.map((p) => ({
+    label: p.label,
+    value: metricValue(p, metric),
+  }));
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 sm:py-12">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8 sm:py-12">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-neutral-900">
@@ -170,152 +162,71 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="flex gap-2 rounded-xl border border-neutral-200 bg-white p-1">
-        {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
-          <button
-            key={p}
-            onClick={() => selectPeriod(p)}
-            className={`flex-1 rounded-lg py-1.5 text-sm font-medium transition ${
-              period === p
-                ? "bg-neutral-900 text-white"
-                : "text-neutral-500 hover:bg-neutral-100"
-            }`}
-          >
-            {PERIOD_LABELS[p]}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white px-4 py-3">
-        <button
-          onClick={() => setDate(shiftPeriod(date, period, -1))}
-          className="rounded-lg px-2 py-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
-          aria-label="Période précédente"
-        >
-          ←
-        </button>
-        <div className="text-center">
-          <div className="text-sm font-medium text-neutral-900">
-            {formatPeriodLabel(date, period)}
+      <div className="flex flex-col gap-5 rounded-xl border border-neutral-200 bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-1 rounded-xl bg-neutral-100 p-1">
+            {METRICS.map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setMetric(m.key)}
+                className={`rounded-lg px-5 py-2.5 text-base font-semibold transition ${
+                  metric === m.key
+                    ? "bg-white text-neutral-900 shadow-sm"
+                    : "text-neutral-400 hover:text-neutral-600"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
-          {!isCurrent && (
-            <button
-              onClick={() => setDate(todayKey())}
-              className="text-xs text-neutral-400 underline underline-offset-2 hover:text-neutral-600"
-            >
-              revenir à aujourd&apos;hui
-            </button>
-          )}
-        </div>
-        <button
-          onClick={() => setDate(shiftPeriod(date, period, 1))}
-          className="rounded-lg px-2 py-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
-          aria-label="Période suivante"
-          disabled={isCurrent}
-        >
-          →
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <SummaryCard label="Revenus bruts" value={summary.grossIncome} />
-        <SummaryCard label="Commission OF" value={-summary.ofFees} muted />
-        <SummaryCard label="Dépenses" value={-summary.expenses} muted />
-        <SummaryCard label="Résultat net" value={summary.result} highlight />
-      </div>
-
-      <form
-        onSubmit={handleAdd}
-        className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4"
-      >
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => selectFormType("INCOME")}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
-              formType === "INCOME"
-                ? "bg-emerald-600 text-white"
-                : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
-            }`}
-          >
-            Revenu
-          </button>
-          <button
-            type="button"
-            onClick={() => selectFormType("EXPENSE")}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
-              formType === "EXPENSE"
-                ? "bg-red-600 text-white"
-                : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
-            }`}
-          >
-            Dépense
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">
-              Source
-            </label>
-            <input
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              className="rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-              placeholder={formType === "INCOME" ? "OnlyFans" : "IG, essence…"}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-500">
-              Montant ($)
-            </label>
-            <input
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              className="rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-              placeholder="0.00"
-            />
+          <div className="flex flex-wrap gap-1 rounded-lg bg-neutral-100 p-1">
+            {PERIODS.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setPeriod(p.key)}
+                className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition ${
+                  period === p.key
+                    ? "bg-neutral-900 text-white"
+                    : "text-neutral-500 hover:bg-neutral-200"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-500">
-            Note (optionnel)
-          </label>
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            className="rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
-            placeholder="Détail…"
-          />
+        <div>
+          <div className="text-xs text-neutral-400">
+            {activeMetric.label}
+            {summary.from && summary.to && (
+              <>
+                {" "}
+                · {formatShort(summary.from)} – {formatShort(summary.to)}
+              </>
+            )}
+          </div>
+          <div
+            className="mt-1 text-3xl font-bold"
+            style={{ color: activeMetric.color }}
+          >
+            {money(total)} $
+          </div>
         </div>
 
-        {formType === "INCOME" && (
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
-            <input
-              type="checkbox"
-              checked={applyFee}
-              onChange={(e) => setApplyFee(e.target.checked)}
-              className="h-4 w-4 rounded border-neutral-300"
-            />
-            Appliquer la commission OnlyFans (20%)
-          </label>
+        {loading ? (
+          <div className="flex h-[220px] items-center justify-center text-sm text-neutral-400">
+            Chargement…
+          </div>
+        ) : (
+          <Chart points={chartPoints} color={activeMetric.color} />
         )}
+      </div>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="mt-1 rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
-        >
-          Ajouter
-        </button>
-      </form>
-
-      {period === "day" ? (
+      <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-neutral-200 bg-white">
           <div className="border-b border-neutral-100 px-4 py-3 text-sm font-medium text-neutral-700">
-            Transactions du jour
+            Historique
           </div>
           {loading ? (
             <div className="px-4 py-6 text-center text-sm text-neutral-400">
@@ -323,10 +234,10 @@ export default function Dashboard() {
             </div>
           ) : transactions.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-neutral-400">
-              Aucune transaction ce jour-là
+              Aucune transaction
             </div>
           ) : (
-            <ul className="divide-y divide-neutral-100">
+            <ul className="max-h-[420px] divide-y divide-neutral-100 overflow-y-auto">
               {transactions.map((t) => (
                 <li
                   key={t.id}
@@ -342,15 +253,16 @@ export default function Dashboard() {
                       <div className="text-sm font-medium text-neutral-900">
                         {t.source}
                       </div>
-                      {t.note && (
-                        <div className="text-xs text-neutral-400">{t.note}</div>
-                      )}
-                      {t.type === "INCOME" && t.feeAmount > 0 && (
-                        <div className="text-xs text-neutral-400">
-                          Brut {money(t.grossAmount)} $ − commission{" "}
-                          {money(t.feeAmount)} $
-                        </div>
-                      )}
+                      <div className="text-xs text-neutral-400">
+                        {formatShort(t.date.slice(0, 10))}
+                        {t.type === "INCOME" && t.feeAmount > 0 && (
+                          <>
+                            {" "}
+                            · brut {money(t.grossAmount)} $ − commission{" "}
+                            {money(t.feeAmount)} $
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -375,87 +287,94 @@ export default function Dashboard() {
             </ul>
           )}
         </div>
-      ) : (
-        <div className="rounded-xl border border-neutral-200 bg-white">
-          <div className="border-b border-neutral-100 px-4 py-3 text-sm font-medium text-neutral-700">
-            Détail par jour
-          </div>
-          <ul className="divide-y divide-neutral-100">
-            {(summary.history ?? []).map((h) => (
-              <li
-                key={h.date}
-                className="flex items-center justify-between px-4 py-2.5 text-sm"
-              >
-                <button
-                  onClick={() => {
-                    setPeriod("day");
-                    setDate(h.date);
-                  }}
-                  className="text-neutral-500 hover:text-neutral-900 hover:underline"
-                >
-                  {formatShort(h.date)}
-                </button>
-                <span className="text-neutral-400">
-                  net {money(h.netIncome)} $
-                </span>
-                <span className="text-neutral-400">
-                  dép. {money(h.expenses)} $
-                </span>
-                <span
-                  className={`font-medium ${
-                    h.result >= 0 ? "text-emerald-600" : "text-red-600"
-                  }`}
-                >
-                  {money(h.result)} $
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
 
-function SummaryCard({
-  label,
-  value,
-  highlight,
-  muted,
-}: {
-  label: string;
-  value: number;
-  highlight?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-xl border p-3 ${
-        highlight
-          ? "border-neutral-900 bg-neutral-900"
-          : "border-neutral-200 bg-white"
-      }`}
-    >
-      <div
-        className={`text-xs ${
-          highlight ? "text-neutral-400" : "text-neutral-500"
-        }`}
-      >
-        {label}
-      </div>
-      <div
-        className={`mt-1 text-lg font-semibold ${
-          highlight
-            ? "text-white"
-            : muted
-            ? "text-neutral-400"
-            : value < 0
-            ? "text-red-600"
-            : "text-neutral-900"
-        }`}
-      >
-        {value < 0 ? "−" : ""}
-        {money(Math.abs(value))} $
+        <form
+          onSubmit={handleAdd}
+          className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4"
+        >
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => selectFormType("INCOME")}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                formType === "INCOME"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+              }`}
+            >
+              Revenu
+            </button>
+            <button
+              type="button"
+              onClick={() => selectFormType("EXPENSE")}
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                formType === "EXPENSE"
+                  ? "bg-red-600 text-white"
+                  : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+              }`}
+            >
+              Dépense
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-neutral-500">
+                Source
+              </label>
+              <input
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                className="rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+                placeholder={formType === "INCOME" ? "OnlyFans" : "IG, essence…"}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-neutral-500">
+                Montant ($)
+              </label>
+              <input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                inputMode="decimal"
+                className="rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-neutral-500">
+              Note (optionnel)
+            </label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+              placeholder="Détail…"
+            />
+          </div>
+
+          {formType === "INCOME" && (
+            <label className="flex items-center gap-2 text-sm text-neutral-600">
+              <input
+                type="checkbox"
+                checked={applyFee}
+                onChange={(e) => setApplyFee(e.target.checked)}
+                className="h-4 w-4 rounded border-neutral-300"
+              />
+              Appliquer la commission OnlyFans (20%)
+            </label>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="mt-1 rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
+          >
+            Ajouter
+          </button>
+        </form>
       </div>
     </div>
   );
