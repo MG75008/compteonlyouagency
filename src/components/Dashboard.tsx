@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { PeriodSummary, Transaction } from "@/lib/types";
+import type { PeriodSummary, SalaryScope, Transaction } from "@/lib/types";
 import Chart from "@/components/Chart";
 
 type Metric = "income" | "expense" | "roi";
@@ -53,6 +53,14 @@ function formatRoi(roi: number | null, netIncome: number): string {
   return `${money(roi)}x`;
 }
 
+const emptySalaryScope: SalaryScope = {
+  netIncome: 0,
+  expenses: 0,
+  result: 0,
+  reserve: 0,
+  available: 0,
+};
+
 const emptySummary: PeriodSummary = {
   period: "alltime",
   from: "",
@@ -68,6 +76,9 @@ const emptySummary: PeriodSummary = {
   avgDailyExpense: 0,
   reinvestReserve: 0,
   salaryAvailable: 0,
+  salaryDay: emptySalaryScope,
+  salaryWeek: emptySalaryScope,
+  salaryMonth: emptySalaryScope,
   points: [],
 };
 
@@ -138,6 +149,15 @@ export default function Dashboard() {
 
   async function handleDelete(id: string) {
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+    refresh(period);
+  }
+
+  async function handleTakeSalary(amount: number) {
+    await fetch("/api/transactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "EXPENSE", source: "Salaire", amount }),
+    });
     refresh(period);
   }
 
@@ -232,22 +252,6 @@ export default function Dashboard() {
                 {metric === "roi" ? formatRoi(summary.roi, summary.netIncome) : `${money(total ?? 0)} $`}
               </div>
             </div>
-
-            <div className="rounded-lg bg-neutral-50 px-4 py-3">
-              <div className="text-xs text-neutral-400">Salaire possible</div>
-              <div
-                className={`mt-0.5 text-lg font-semibold ${
-                  summary.salaryAvailable > 0 ? "text-neutral-900" : "text-red-600"
-                }`}
-              >
-                {money(summary.salaryAvailable)} $
-              </div>
-              <div className="mt-1 text-[11px] text-neutral-400">
-                Solde {money(summary.balance)} $ − réserve réinvest.{" "}
-                {money(summary.reinvestReserve)} $ (
-                {money(summary.avgDailyExpense)} $/jour × 7j)
-              </div>
-            </div>
           </div>
 
           <div className="mt-6">
@@ -258,6 +262,35 @@ export default function Dashboard() {
             ) : (
               <Chart points={chartPoints} color={activeMetric.color} />
             )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-6">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-medium text-neutral-700">
+              Salaire possible
+            </h2>
+            <span className="text-xs text-neutral-400">
+              Solde total {money(summary.balance)} $ · moyenne{" "}
+              {money(summary.avgDailyExpense)} $/jour de dépenses
+            </span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <SalaryBox
+              label="Aujourd'hui"
+              scope={summary.salaryDay}
+              onTake={handleTakeSalary}
+            />
+            <SalaryBox
+              label="Cette semaine"
+              scope={summary.salaryWeek}
+              onTake={handleTakeSalary}
+            />
+            <SalaryBox
+              label="Ce mois"
+              scope={summary.salaryMonth}
+              onTake={handleTakeSalary}
+            />
           </div>
         </div>
 
@@ -429,6 +462,62 @@ export default function Dashboard() {
           </form>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SalaryBox({
+  label,
+  scope,
+  onTake,
+}: {
+  label: string;
+  scope: SalaryScope;
+  onTake: (amount: number) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const amount = parseFloat((value || String(scope.available)).replace(",", "."));
+    if (!amount || amount <= 0) return;
+    setSubmitting(true);
+    await onTake(amount);
+    setValue("");
+    setSubmitting(false);
+  }
+
+  return (
+    <div className="rounded-lg border border-neutral-100 bg-neutral-50 p-3">
+      <div className="text-xs text-neutral-400">{label}</div>
+      <div
+        className={`mt-0.5 text-xl font-bold ${
+          scope.available > 0 ? "text-neutral-900" : "text-red-600"
+        }`}
+      >
+        {money(scope.available)} $
+      </div>
+      <div className="mt-1 text-[11px] text-neutral-400">
+        Net {money(scope.netIncome)} $ − dép. {money(scope.expenses)} $ −
+        réserve {money(scope.reserve)} $
+      </div>
+      <form onSubmit={handleSubmit} className="mt-2 flex gap-1">
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          inputMode="decimal"
+          placeholder={money(scope.available)}
+          className="w-0 flex-1 rounded-md border border-neutral-200 px-2 py-1 text-xs outline-none focus:border-neutral-400"
+        />
+        <button
+          type="submit"
+          disabled={submitting}
+          className="shrink-0 rounded-md bg-neutral-900 px-2 py-1 text-xs font-medium text-white transition hover:bg-neutral-700 disabled:opacity-50"
+        >
+          Prendre
+        </button>
+      </form>
     </div>
   );
 }
