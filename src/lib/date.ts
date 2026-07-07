@@ -70,7 +70,7 @@ export function startOfWeek(dateStr: string): string {
   return shiftDayKey(dateStr, -mondayOffset);
 }
 
-function daysBetween(fromStr: string, toStr: string): number {
+export function daysBetween(fromStr: string, toStr: string): number {
   const [y1, m1, d1] = fromStr.split("-").map(Number);
   const [y2, m2, d2] = toStr.split("-").map(Number);
   return Math.round(

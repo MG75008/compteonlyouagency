@@ -64,6 +64,10 @@ const emptySummary: PeriodSummary = {
   expenses: 0,
   result: 0,
   roi: null,
+  balance: 0,
+  avgDailyExpense: 0,
+  reinvestReserve: 0,
+  salaryAvailable: 0,
   points: [],
 };
 
@@ -230,15 +234,18 @@ export default function Dashboard() {
             </div>
 
             <div className="rounded-lg bg-neutral-50 px-4 py-3">
-              <div className="text-xs text-neutral-400">
-                Salaire possible (après dépenses)
-              </div>
+              <div className="text-xs text-neutral-400">Salaire possible</div>
               <div
                 className={`mt-0.5 text-lg font-semibold ${
-                  summary.result >= 0 ? "text-neutral-900" : "text-red-600"
+                  summary.salaryAvailable > 0 ? "text-neutral-900" : "text-red-600"
                 }`}
               >
-                {money(summary.result)} $
+                {money(summary.salaryAvailable)} $
+              </div>
+              <div className="mt-1 text-[11px] text-neutral-400">
+                Solde {money(summary.balance)} $ − réserve réinvest.{" "}
+                {money(summary.reinvestReserve)} $ (
+                {money(summary.avgDailyExpense)} $/jour × 7j)
               </div>
             </div>
           </div>

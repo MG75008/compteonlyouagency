@@ -31,5 +31,9 @@ export type PeriodSummary = {
   expenses: number;
   result: number;
   roi: number | null;
+  balance: number;
+  avgDailyExpense: number;
+  reinvestReserve: number;
+  salaryAvailable: number;
   points: ChartPoint[];
 };

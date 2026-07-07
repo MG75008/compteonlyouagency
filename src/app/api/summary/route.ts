@@ -2,15 +2,59 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { round2 } from "@/lib/money";
 import {
-  daysInRange,
   dayKey,
+  dayRangeUtc,
+  daysBetween,
+  daysInRange,
   hourKeysOfDay,
   hourOfDate,
   monthKeyOf,
   monthsInRange,
+  shiftDayKey,
+  todayKey,
   viewPeriodRangeUtc,
   type ViewPeriod,
 } from "@/lib/date";
+
+const REINVEST_WINDOW_DAYS = 30;
+const REINVEST_RUNWAY_DAYS = 7;
+
+async function computeSalaryAvailable() {
+  const [incomeAgg, expenseAgg] = await Promise.all([
+    prisma.transaction.aggregate({
+      _sum: { netAmount: true },
+      where: { type: "INCOME" },
+    }),
+    prisma.transaction.aggregate({
+      _sum: { netAmount: true },
+      where: { type: "EXPENSE" },
+    }),
+  ]);
+  const balance = round2(
+    (incomeAgg._sum.netAmount ?? 0) - (expenseAgg._sum.netAmount ?? 0)
+  );
+
+  const earliest = await prisma.transaction.findFirst({ orderBy: { date: "asc" } });
+  const today = todayKey();
+  const earliestKey = earliest ? dayKey(earliest.date) : today;
+  const daysSinceStart = Math.max(1, daysBetween(earliestKey, today) + 1);
+  const windowDays = Math.min(REINVEST_WINDOW_DAYS, daysSinceStart);
+  const windowFrom = shiftDayKey(today, -(windowDays - 1));
+
+  const { start: windowStart } = dayRangeUtc(windowFrom);
+  const { end: windowEnd } = dayRangeUtc(today);
+  const windowExpenseAgg = await prisma.transaction.aggregate({
+    _sum: { netAmount: true },
+    where: { type: "EXPENSE", date: { gte: windowStart, lt: windowEnd } },
+  });
+  const avgDailyExpense = round2(
+    (windowExpenseAgg._sum.netAmount ?? 0) / windowDays
+  );
+  const reinvestReserve = round2(avgDailyExpense * REINVEST_RUNWAY_DAYS);
+  const salaryAvailable = round2(Math.max(0, balance - reinvestReserve));
+
+  return { balance, avgDailyExpense, reinvestReserve, salaryAvailable };
+}
 
 type Tx = { type: string; grossAmount: number; feeAmount: number; netAmount: number };
 
@@ -109,12 +153,15 @@ export async function GET(request: NextRequest) {
     ...summarize(buckets.get(key) ?? []),
   }));
 
+  const salary = await computeSalaryAvailable();
+
   return NextResponse.json({
     period,
     from,
     to,
     granularity,
     ...totals,
+    ...salary,
     points,
   });
 }
