@@ -64,7 +64,7 @@ export default function Chart({ points, color }: ChartProps) {
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       className="w-full"
       preserveAspectRatio="none"
-      style={{ height: HEIGHT }}
+      style={{ height: HEIGHT, fontFamily: "var(--font-sans)" }}
     >
       {gridLines.map((g, i) => (
         <g key={i}>
@@ -74,11 +74,18 @@ export default function Chart({ points, color }: ChartProps) {
             x2={WIDTH - PAD_X}
             y2={g.y}
             stroke="#4a3a32"
-            strokeDasharray="4 4"
+            strokeDasharray="3 4"
             strokeWidth={1}
           />
-          <text x={0} y={g.y - 4} fontSize={9} fill="#b6a693">
-            {Math.round(g.value)}
+          <text
+            x={0}
+            y={g.y - 5}
+            fontSize={10}
+            fontWeight={500}
+            letterSpacing={0.2}
+            fill="#c9bba8"
+          >
+            {Math.round(g.value).toLocaleString("fr-CA")}
           </text>
         </g>
       ))}
@@ -96,8 +103,10 @@ export default function Chart({ points, color }: ChartProps) {
             key={i}
             x={coords[i].x}
             y={HEIGHT - 8}
-            fontSize={9}
-            fill="#b6a693"
+            fontSize={10}
+            fontWeight={500}
+            letterSpacing={0.2}
+            fill="#c9bba8"
             textAnchor="middle"
           >
             {p.label}

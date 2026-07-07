@@ -214,10 +214,17 @@ export default function Dashboard() {
             )}
           </div>
           <div
-            className="mt-1 font-serif text-4xl font-extrabold sm:text-5xl"
+            className="mt-2 flex items-baseline gap-2"
             style={{ color: activeMetric.color }}
           >
-            {metric === "roi" ? formatRoi(summary.roi, summary.netIncome) : `${money(total ?? 0)} $`}
+            <span className="font-serif text-4xl font-bold tracking-tight tabular-nums sm:text-5xl">
+              {metric === "roi" ? formatRoi(summary.roi, summary.netIncome) : money(total ?? 0)}
+            </span>
+            {metric !== "roi" && (
+              <span className="text-lg font-medium text-brand-muted sm:text-xl">
+                $
+              </span>
+            )}
           </div>
 
           <div className="mt-6">
