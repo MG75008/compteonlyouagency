@@ -21,8 +21,11 @@ export default function Chart({ points, color }: ChartProps) {
   }
 
   const values = points.map((p) => p.value);
-  const max = Math.max(...values, 0);
+  let max = Math.max(...values, 0);
   const min = Math.min(...values, 0);
+  if (max === 0 && min === 0) {
+    max = 100;
+  }
   const range = max - min || 1;
 
   const plotWidth = WIDTH - PAD_X * 2;
@@ -73,7 +76,7 @@ export default function Chart({ points, color }: ChartProps) {
             y1={g.y}
             x2={WIDTH - PAD_X}
             y2={g.y}
-            stroke="#4a3a32"
+            stroke="#26262b"
             strokeDasharray="3 4"
             strokeWidth={1}
           />
@@ -83,9 +86,9 @@ export default function Chart({ points, color }: ChartProps) {
             fontSize={10}
             fontWeight={500}
             letterSpacing={0.2}
-            fill="#c9bba8"
+            fill="#9a9aa0"
           >
-            {Math.round(g.value).toLocaleString("fr-CA")}
+            {(Math.round(g.value) || 0).toLocaleString("fr-CA")}
           </text>
         </g>
       ))}
@@ -106,7 +109,7 @@ export default function Chart({ points, color }: ChartProps) {
             fontSize={10}
             fontWeight={500}
             letterSpacing={0.2}
-            fill="#c9bba8"
+            fill="#9a9aa0"
             textAnchor="middle"
           >
             {p.label}
