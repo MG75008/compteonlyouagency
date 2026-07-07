@@ -8,10 +8,12 @@ import Logo from "@/components/Logo";
 type Metric = "income" | "expense" | "roi";
 type ViewPeriod = "yesterday" | "today" | "week" | "month" | "alltime";
 
-const METRICS: { key: Metric; label: string; color: string }[] = [
-  { key: "income", label: "Rentrée", color: "#9cc69b" },
-  { key: "expense", label: "Dépense", color: "#e0968a" },
-  { key: "roi", label: "ROI", color: "#c9a961" },
+const ACCENT = "#3b82f6";
+
+const METRICS: { key: Metric; label: string }[] = [
+  { key: "income", label: "Rentrée" },
+  { key: "expense", label: "Dépense" },
+  { key: "roi", label: "ROI" },
 ];
 
 const PERIODS: { key: ViewPeriod; label: string }[] = [
@@ -151,7 +153,7 @@ export default function Dashboard() {
         <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-4 sm:px-8">
           <div className="flex items-center justify-between">
             <Logo />
-            <div className="flex items-center gap-2 rounded-full border border-brand-border bg-brand-surface-2 px-3 py-1.5 text-xs text-brand-muted">
+            <div className="flex items-center gap-2 rounded-full border border-brand-border bg-brand-surface px-3 py-1.5 text-xs text-brand-muted">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
                   botConnected ? "bg-brand-income" : "bg-brand-muted"
@@ -166,14 +168,14 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex w-full gap-1 rounded-xl bg-brand-surface-2 p-1 lg:max-w-2xl">
+            <div className="flex w-full gap-1 rounded-xl bg-brand-surface p-1 lg:max-w-2xl">
               {METRICS.map((m) => (
                 <button
                   key={m.key}
                   onClick={() => setMetric(m.key)}
-                  className={`flex-1 rounded-lg px-4 py-3 font-serif text-lg font-bold tracking-wide transition ${
+                  className={`flex-1 rounded-lg px-4 py-3 text-lg font-bold transition ${
                     metric === m.key
-                      ? "bg-brand-bg text-brand-text shadow-sm"
+                      ? "bg-brand-surface-2 text-brand-text"
                       : "text-brand-muted hover:text-brand-text"
                   }`}
                 >
@@ -181,15 +183,15 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap gap-1 rounded-lg bg-brand-surface-2 p-1">
+            <div className="flex flex-wrap gap-1 rounded-lg bg-brand-surface p-1">
               {PERIODS.map((p) => (
                 <button
                   key={p.key}
                   onClick={() => setPeriod(p.key)}
                   className={`rounded-md px-3 py-2 text-sm font-medium transition ${
                     period === p.key
-                      ? "bg-brand-gold text-brand-bg"
-                      : "text-brand-muted hover:bg-brand-surface hover:text-brand-text"
+                      ? "bg-brand-surface-2 text-brand-accent"
+                      : "text-brand-muted hover:bg-brand-surface-2 hover:text-brand-text"
                   }`}
                 >
                   {p.label}
@@ -213,11 +215,8 @@ export default function Dashboard() {
               </>
             )}
           </div>
-          <div
-            className="mt-2 flex items-baseline gap-2"
-            style={{ color: activeMetric.color }}
-          >
-            <span className="font-serif text-4xl font-bold tracking-tight tabular-nums sm:text-5xl">
+          <div className="mt-2 flex items-baseline gap-2" style={{ color: ACCENT }}>
+            <span className="text-4xl font-bold tracking-tight tabular-nums sm:text-5xl">
               {metric === "roi" ? formatRoi(summary.roi, summary.netIncome) : money(total ?? 0)}
             </span>
             {metric !== "roi" && (
@@ -233,14 +232,14 @@ export default function Dashboard() {
                 Chargement…
               </div>
             ) : (
-              <Chart points={chartPoints} color={activeMetric.color} />
+              <Chart points={chartPoints} color={ACCENT} />
             )}
           </div>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl border border-brand-border bg-brand-surface">
-            <div className="border-b border-brand-border px-4 py-3 font-serif text-sm font-bold tracking-wide text-brand-text">
+            <div className="border-b border-brand-border px-4 py-3 text-sm font-bold text-brand-text">
               Historique
             </div>
             {loading ? (
@@ -345,7 +344,7 @@ export default function Dashboard() {
                 <input
                   value={source}
                   onChange={(e) => setSource(e.target.value)}
-                  className="rounded-lg border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none placeholder:text-brand-muted focus:border-brand-gold"
+                  className="rounded-lg border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none placeholder:text-brand-muted focus:border-brand-accent"
                   placeholder={formType === "INCOME" ? "OnlyFans" : "IG, essence…"}
                 />
               </div>
@@ -357,7 +356,7 @@ export default function Dashboard() {
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   inputMode="decimal"
-                  className="rounded-lg border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none placeholder:text-brand-muted focus:border-brand-gold"
+                  className="rounded-lg border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none placeholder:text-brand-muted focus:border-brand-accent"
                   placeholder="0.00"
                 />
               </div>
@@ -370,7 +369,7 @@ export default function Dashboard() {
               <input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                className="rounded-lg border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none placeholder:text-brand-muted focus:border-brand-gold"
+                className="rounded-lg border border-brand-border bg-brand-bg px-3 py-2 text-sm text-brand-text outline-none placeholder:text-brand-muted focus:border-brand-accent"
                 placeholder="Détail…"
               />
             </div>
@@ -399,7 +398,7 @@ export default function Dashboard() {
             <button
               type="submit"
               disabled={submitting}
-              className="mt-1 rounded-lg bg-brand-gold px-3 py-2 text-sm font-semibold text-brand-bg transition hover:opacity-90 disabled:opacity-50"
+              className="mt-1 rounded-lg bg-brand-accent px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
             >
               Ajouter
             </button>

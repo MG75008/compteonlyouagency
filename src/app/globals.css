@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --brand-bg: #261b17;
-  --brand-surface: #322520;
-  --brand-surface-2: #3b2c26;
-  --brand-border: #493830;
-  --brand-text: #f3ebdd;
-  --brand-muted: #b6a693;
-  --brand-gold: #c9a961;
-  --brand-income: #9cc69b;
-  --brand-expense: #e0968a;
+  --brand-bg: #0a0a0b;
+  --brand-surface: #161618;
+  --brand-surface-2: #202024;
+  --brand-border: #2a2a2f;
+  --brand-text: #f4f4f5;
+  --brand-muted: #96969c;
+  --brand-accent: #3b82f6;
+  --brand-income: #34d399;
+  --brand-expense: #f87171;
 }
 
 @theme inline {
@@ -19,12 +19,11 @@
   --color-brand-border: var(--brand-border);
   --color-brand-text: var(--brand-text);
   --color-brand-muted: var(--brand-muted);
-  --color-brand-gold: var(--brand-gold);
+  --color-brand-accent: var(--brand-accent);
   --color-brand-income: var(--brand-income);
   --color-brand-expense: var(--brand-expense);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-serif: var(--font-playfair);
 }
 
 body {
