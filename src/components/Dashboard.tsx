@@ -39,12 +39,18 @@ function money(n: number): string {
 }
 
 function metricValue(
-  s: Pick<PeriodSummary, "netIncome" | "expenses" | "result">,
+  s: Pick<PeriodSummary, "netIncome" | "expenses" | "result" | "roi">,
   metric: Metric
-): number {
+): number | null {
   if (metric === "income") return s.netIncome;
   if (metric === "expense") return s.expenses;
+  if (metric === "roi") return s.roi;
   return s.result;
+}
+
+function formatRoi(roi: number | null, netIncome: number): string {
+  if (roi === null) return netIncome > 0 ? "∞" : "—";
+  return `${money(roi)}x`;
 }
 
 const emptySummary: PeriodSummary = {
@@ -57,6 +63,7 @@ const emptySummary: PeriodSummary = {
   netIncome: 0,
   expenses: 0,
   result: 0,
+  roi: null,
   points: [],
 };
 
@@ -134,7 +141,7 @@ export default function Dashboard() {
   const total = metricValue(summary, metric);
   const chartPoints = summary.points.map((p) => ({
     label: p.label,
-    value: metricValue(p, metric),
+    value: metricValue(p, metric) ?? 0,
   }));
 
   return (
@@ -201,21 +208,39 @@ export default function Dashboard() {
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-4 py-6 sm:px-8 sm:py-8">
         <div className="rounded-xl border border-neutral-200 bg-white p-4 sm:p-6">
-          <div className="text-sm text-neutral-400">
-            {activeMetric.label}
-            {metric === "income" && " (net, commission OnlyFans 20% déduite)"}
-            {summary.from && summary.to && (
-              <>
-                {" "}
-                · {formatShort(summary.from)} – {formatShort(summary.to)}
-              </>
-            )}
-          </div>
-          <div
-            className="mt-1 text-4xl font-bold sm:text-5xl"
-            style={{ color: activeMetric.color }}
-          >
-            {money(total)} $
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-sm text-neutral-400">
+                {activeMetric.label}
+                {metric === "income" && " (net, commission OnlyFans 20% déduite)"}
+                {metric === "roi" && " (revenus nets ÷ dépenses)"}
+                {summary.from && summary.to && (
+                  <>
+                    {" "}
+                    · {formatShort(summary.from)} – {formatShort(summary.to)}
+                  </>
+                )}
+              </div>
+              <div
+                className="mt-1 text-4xl font-bold sm:text-5xl"
+                style={{ color: activeMetric.color }}
+              >
+                {metric === "roi" ? formatRoi(summary.roi, summary.netIncome) : `${money(total ?? 0)} $`}
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-neutral-50 px-4 py-3">
+              <div className="text-xs text-neutral-400">
+                Salaire possible (après dépenses)
+              </div>
+              <div
+                className={`mt-0.5 text-lg font-semibold ${
+                  summary.result >= 0 ? "text-neutral-900" : "text-red-600"
+                }`}
+              >
+                {money(summary.result)} $
+              </div>
+            </div>
           </div>
 
           <div className="mt-6">

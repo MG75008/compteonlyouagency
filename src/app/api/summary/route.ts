@@ -34,6 +34,7 @@ function summarize(transactions: Tx[]) {
     netIncome: round2(netIncome),
     expenses: round2(expenses),
     result: round2(netIncome - expenses),
+    roi: expenses > 0 ? round2(netIncome / expenses) : null,
   };
 }
 

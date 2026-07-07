@@ -17,6 +17,7 @@ export type ChartPoint = {
   netIncome: number;
   expenses: number;
   result: number;
+  roi: number | null;
 };
 
 export type PeriodSummary = {
@@ -29,5 +30,6 @@ export type PeriodSummary = {
   netIncome: number;
   expenses: number;
   result: number;
+  roi: number | null;
   points: ChartPoint[];
 };
