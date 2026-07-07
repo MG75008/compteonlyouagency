@@ -20,14 +20,6 @@ export type ChartPoint = {
   roi: number | null;
 };
 
-export type SalaryScope = {
-  netIncome: number;
-  expenses: number;
-  result: number;
-  reserve: number;
-  available: number;
-};
-
 export type PeriodSummary = {
   period: "yesterday" | "today" | "week" | "month" | "alltime";
   from: string;
@@ -39,12 +31,5 @@ export type PeriodSummary = {
   expenses: number;
   result: number;
   roi: number | null;
-  balance: number;
-  avgDailyExpense: number;
-  reinvestReserve: number;
-  salaryAvailable: number;
-  salaryDay: SalaryScope;
-  salaryWeek: SalaryScope;
-  salaryMonth: SalaryScope;
   points: ChartPoint[];
 };

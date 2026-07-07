@@ -3,21 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { round2 } from "@/lib/money";
 import {
   dayKey,
-  dayRangeUtc,
-  daysBetween,
   daysInRange,
   hourKeysOfDay,
   hourOfDate,
   monthKeyOf,
   monthsInRange,
-  shiftDayKey,
-  todayKey,
   viewPeriodRangeUtc,
   type ViewPeriod,
 } from "@/lib/date";
-
-const REINVEST_WINDOW_DAYS = 30;
-const REINVEST_RUNWAY_DAYS = 7;
 
 type Tx = { type: string; grossAmount: number; feeAmount: number; netAmount: number };
 
@@ -42,68 +35,6 @@ function summarize(transactions: Tx[]) {
     expenses: round2(expenses),
     result: round2(netIncome - expenses),
     roi: expenses > 0 ? round2(netIncome / expenses) : null,
-  };
-}
-
-async function computeAvgDailyExpense() {
-  const today = todayKey();
-  const earliest = await prisma.transaction.findFirst({ orderBy: { date: "asc" } });
-  const earliestKey = earliest ? dayKey(earliest.date) : today;
-  const daysSinceStart = Math.max(1, daysBetween(earliestKey, today) + 1);
-  const windowDays = Math.min(REINVEST_WINDOW_DAYS, daysSinceStart);
-  const windowFrom = shiftDayKey(today, -(windowDays - 1));
-
-  const { start: windowStart } = dayRangeUtc(windowFrom);
-  const { end: windowEnd } = dayRangeUtc(today);
-  const windowExpenseAgg = await prisma.transaction.aggregate({
-    _sum: { netAmount: true },
-    where: { type: "EXPENSE", date: { gte: windowStart, lt: windowEnd } },
-  });
-  return round2((windowExpenseAgg._sum.netAmount ?? 0) / windowDays);
-}
-
-async function scopedSalary(scopePeriod: ViewPeriod, reserveDays: number, avgDailyExpense: number) {
-  const { start, end } = viewPeriodRangeUtc(scopePeriod, undefined);
-  const txs = await prisma.transaction.findMany({ where: { date: { gte: start, lt: end } } });
-  const s = summarize(txs);
-  const reserve = round2(avgDailyExpense * reserveDays);
-  const available = round2(Math.max(0, s.result - reserve));
-  return {
-    netIncome: s.netIncome,
-    expenses: s.expenses,
-    result: s.result,
-    reserve,
-    available,
-  };
-}
-
-async function computeSalaryBreakdown() {
-  const avgDailyExpense = await computeAvgDailyExpense();
-
-  const [day, week, month] = await Promise.all([
-    scopedSalary("today", 1, avgDailyExpense),
-    scopedSalary("week", 7, avgDailyExpense),
-    scopedSalary("month", 30, avgDailyExpense),
-  ]);
-
-  const [incomeAgg, expenseAgg] = await Promise.all([
-    prisma.transaction.aggregate({ _sum: { netAmount: true }, where: { type: "INCOME" } }),
-    prisma.transaction.aggregate({ _sum: { netAmount: true }, where: { type: "EXPENSE" } }),
-  ]);
-  const balance = round2(
-    (incomeAgg._sum.netAmount ?? 0) - (expenseAgg._sum.netAmount ?? 0)
-  );
-  const reinvestReserve = round2(avgDailyExpense * REINVEST_RUNWAY_DAYS);
-  const salaryAvailable = round2(Math.max(0, balance - reinvestReserve));
-
-  return {
-    balance,
-    avgDailyExpense,
-    reinvestReserve,
-    salaryAvailable,
-    salaryDay: day,
-    salaryWeek: week,
-    salaryMonth: month,
   };
 }
 
@@ -178,15 +109,12 @@ export async function GET(request: NextRequest) {
     ...summarize(buckets.get(key) ?? []),
   }));
 
-  const salary = await computeSalaryBreakdown();
-
   return NextResponse.json({
     period,
     from,
     to,
     granularity,
     ...totals,
-    ...salary,
     points,
   });
 }
