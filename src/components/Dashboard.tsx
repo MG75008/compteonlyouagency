@@ -147,7 +147,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex min-h-full w-full flex-col bg-brand-bg">
-      <div className="sticky top-0 z-10 w-full border-b border-brand-border bg-brand-surface">
+      <div className="sticky top-0 z-10 w-full border-b border-brand-border bg-brand-bg">
         <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-4 sm:px-8">
           <div className="flex items-center justify-between">
             <Logo />

@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --brand-bg: #2b1f1c;
-  --brand-surface: #362824;
-  --brand-surface-2: #3f2f2a;
-  --brand-border: #4a3a32;
+  --brand-bg: #261b17;
+  --brand-surface: #322520;
+  --brand-surface-2: #3b2c26;
+  --brand-border: #493830;
   --brand-text: #f3ebdd;
   --brand-muted: #b6a693;
   --brand-gold: #c9a961;
